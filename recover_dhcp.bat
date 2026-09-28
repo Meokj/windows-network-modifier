@@ -1,64 +1,53 @@
-@echo off
-cls
+Clear-Host
+Write-Host "===================================================" -ForegroundColor Cyan
+Write-Host "                Revert to DHCP" -ForegroundColor Cyan
+Write-Host "===================================================" -ForegroundColor Cyan
+Write-Host ""
 
-:: 1. Check for Administrator privileges
-openfiles >nul 2>&1
-if errorlevel 1 (
-    echo [ERROR] Please run as Administrator.
-    echo.
-    pause
-    exit /B
-)
+Write-Host "[INFO] Detecting active network adapters:" -ForegroundColor Yellow
+Write-Host "---------------------------------------------------"
+Write-Host ("{0,-7} {1}" -f "Index", "Adapter Name (Description)")
+Write-Host ("{0,-7} {1}" -f "-----", "--------------------------")
 
-echo ===================================================
-echo     Revert to DHCP 
-echo ===================================================
-echo.
+Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | ForEach-Object {
+    "{0,-7} {1} ({2})" -f $_.InterfaceIndex, $_.Name, $_.InterfaceDescription
+}
+Write-Host "---------------------------------------------------"
+Write-Host ""
 
-:: 2. List all active network adapters with perfect alignment
-echo [INFO] Detecting active network adapters:
-echo ---------------------------------------------------
-echo Index   Adapter Name (Description)
-echo -----   --------------------------
-powershell -Command "Get-NetAdapter | Where-Object {$_.Status -eq 'Up'} | ForEach-Object { '{0,-7} {1} ({2})' -f $_.InterfaceIndex, $_.Name, $_.InterfaceDescription }"
-echo ---------------------------------------------------
-echo.
-
-:: 3. Prompt user for the Index number
-set /p IDX="Enter the [Index] number of your adapter to restore: "
-
-:: 4. Automatically check if the Index exists and fetch the name
-for /f "delims=" %%a in ('powershell -Command "(Get-NetAdapter -InterfaceIndex %IDX% -ErrorAction SilentlyContinue).Name"') do (
-    set "ADAPTER_NAME=%%a"
-)
-
-if "%ADAPTER_NAME%"=="" (
-    echo [ERROR] Invalid Index number. Please double-check the list.
-    pause
+$Idx = Read-Host "Enter the [Index] number of your adapter to restore"
+if ([string]::IsNullOrWhiteSpace($Idx)) {
+    Write-Host "[ERROR] Index cannot be empty!" -ForegroundColor Red
+    Pause
     exit
-)
+}
 
-echo ---------------------------------------------------
-echo Adapter Selected: %ADAPTER_NAME% (Index %IDX%)
-echo Status: Purging cached gateways and enabling DHCP...
-echo ---------------------------------------------------
-echo.
+$TargetAdapter = Get-NetAdapter -InterfaceIndex $Idx -ErrorAction SilentlyContinue
+if (-not $TargetAdapter) {
+    Write-Host "[ERROR] Invalid Index number!" -ForegroundColor Red
+    Pause
+    exit
+}
 
-:: 5. [FIXED] Forcefully clear any sticky/grayed-out static gateways first, then enable DHCP
-powershell -Command "Remove-NetRoute -InterfaceIndex %IDX% -Confirm:$false -ErrorAction SilentlyContinue" >nul 2>&1
-powershell -Command "Set-NetIPInterface -InterfaceIndex %IDX% -Dhcp Enabled -ErrorAction SilentlyContinue" >nul 2>&1
-powershell -Command "Set-DnsClientServerAddress -InterfaceIndex %IDX% -ResetServerAddresses -ErrorAction SilentlyContinue" >nul 2>&1
+Write-Host ""
+Write-Host "Reconfiguring network via DHCP, please wait..." -ForegroundColor Yellow
+Write-Host "---------------------------------------------------"
 
-echo Reconfiguring network via DHCP, please wait...
-echo ---------------------------------------------------
+try {
+    Set-NetIPInterface -InterfaceIndex $Idx -Dhcp Enabled -ErrorAction Stop
+    Set-DnsClientServerAddress -InterfaceIndex $Idx -ResetServerAddresses -ErrorAction Stop
+    
+    Write-Host "Renewing IP address from your router..." -ForegroundColor Yellow
+    Update-NetIPAddress -InterfaceIndex $Idx -ErrorAction SilentlyContinue
+    Clear-DnsClientCache
+    
+    Write-Host "---------------------------------------------------"
+    Write-Host "🎉 SUCCESS! DHCP Restored. Current Active Settings:" -ForegroundColor Green
+    Write-Host "---------------------------------------------------"
+    Get-NetIPConfiguration -InterfaceIndex $Idx
+} catch {
+    Write-Host "[ERROR] Failed to restore DHCP: $_" -ForegroundColor Red
+}
 
-:: 6. Force a quick refresh to fetch new IP from your main router
-ipconfig /renew %ADAPTER_NAME% >nul 2>&1
-
-echo ---------------------------------------------------
-echo Success! DHCP Restored. Current Active Settings:
-echo ---------------------------------------------------
-powershell -Command "Get-NetIPConfiguration -InterfaceIndex %IDX%"
-echo.
-
-pause
+Write-Host ""
+Pause
