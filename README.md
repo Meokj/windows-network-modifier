@@ -7,7 +7,7 @@ No need to download any files locally. Simply open **PowerShell (Run as Administ
 irm "https://raw.githubusercontent.com/Meokj/windows-network-modifier/refs/heads/main/set_network.bat" | cmd
 ```
 
-`recover_dhcp.bat
+`recover_dhcp.ps1
 ```powershell
-irm "https://raw.githubusercontent.com/Meokj/windows-network-modifier/refs/heads/main/recover_dhcp.bat" | cmd
+irm "https://raw.githubusercontent.com/Meokj/windows-network-modifier/refs/heads/main/recover_dhcp.ps1" | cmd
 ```
